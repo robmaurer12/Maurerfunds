@@ -477,7 +477,7 @@ $0.00
 <div class="card">
 
 <div class="card-title">
-Current Portfolio Value
+Current Portfolllllllio Value
 </div>
 
 <div
