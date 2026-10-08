@@ -1,0 +1,10 @@
+{
+  "name": "maurerfunds",
+  "private": true,
+  "scripts": {
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "wrangler": "^4.149.0"
+  }
+}
