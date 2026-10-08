@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+
+<meta charset="UTF-8">
+
+<meta
+    name="viewport"
+    content="width=device-width, initial-scale=1.0"
+>
+
+<title>MaurerFunds</title>
+
+<link
+    rel="stylesheet"
+    href="/styles.css"
+>
+
+</head>
+
+<body>
+
+<header>
+
+<div>
+
+<div class="logo">
+MaurerFunds
+</div>
+
+<div class="subtitle">
+Investment Portfolio
+</div>
+
+</div>
+
+</header>
+
+<main>
+
+<div class="summary">
+
+<div class="card">
+
+<div class="card-title">
+Total Invested
+</div>
+
+<div
+    class="card-value"
+    id="totalInvested"
+>
+$0.00
+</div>
+
+</div>
+
+
+<div class="card">
+
+<div class="card-title">
+Current Portfolio Value
+</div>
+
+<div
+    class="card-value"
+    id="portfolioValue"
+>
+$0.00
+</div>
+
+</div>
+
+
+<div class="card">
+
+<div class="card-title">
+Total Gain/Loss
+</div>
+
+<div
+    class="card-value"
+    id="totalGainLoss"
+>
+$0.00
+</div>
+
+</div>
+
+</div>
+
+
+<div class="summary">
+
+<div class="card">
+
+<div class="card-title">
+Number of Holdings
+</div>
+
+<div
+    class="card-value"
+    id="holdingCount"
+>
+0
+</div>
+
+</div>
+
+
+<div class="card">
+
+<div class="card-title">
+Total Shares
+</div>
+
+<div
+    class="card-value"
+    id="totalShares"
+>
+0
+</div>
+
+</div>
+
+</div>
+
+
+<div class="section-header">
+
+<h2>
+Holdings
+</h2>
+
+<button
+    class="add-button"
+    onclick="openModal()"
+>
++ Add Holding
+</button>
+
+</div>
+
+
+<div class="table-container">
+
+<table>
+
+<thead>
+
+<tr>
+
+<th>Ticker</th>
+
+<th>Shares</th>
+
+<th>Purchase Price</th>
+
+<th>Current Price</th>
+
+<th>Current Value</th>
+
+<th>Gain/Loss</th>
+
+<th>Buy Date</th>
+
+<th>Action</th>
+
+</tr>
+
+</thead>
+
+
+<tbody id="holdingsTable">
+
+<tr>
+
+<td
+    colspan="8"
+    class="empty"
+>
+Loading holdings...
+</td>
+
+</tr>
+
+</tbody>
+
+</table>
+
+</div>
+
+</main>
+
+
+<div
+    class="modal-overlay"
+    id="modal"
+>
+
+<div class="modal">
+
+<h2>
+Add Holding
+</h2>
+
+
+<form id="holdingForm">
+
+<div class="form-group">
+
+<label for="ticker">
+Ticker
+</label>
+
+<input
+    type="text"
+    id="ticker"
+    placeholder="AAPL"
+    required
+>
+
+</div>
+
+
+<div class="form-group">
+
+<label for="shares">
+Shares
+</label>
+
+<input
+    type="number"
+    id="shares"
+    placeholder="10"
+    step="0.0001"
+    min="0.0001"
+    required
+>
+
+</div>
+
+
+<div class="form-group">
+
+<label for="purchasePrice">
+Purchase Price
+</label>
+
+<input
+    type="number"
+    id="purchasePrice"
+    placeholder="150.00"
+    step="0.01"
+    min="0.01"
+    required
+>
+
+</div>
+
+
+<div class="form-group">
+
+<label for="buyDate">
+Purchase Date
+</label>
+
+<input
+    type="date"
+    id="buyDate"
+    required
+>
+
+</div>
+
+
+<div
+    class="error"
+    id="formError"
+>
+</div>
+
+
+<div class="modal-buttons">
+
+<button
+    type="button"
+    class="cancel-button"
+    onclick="closeModal()"
+>
+Cancel
+</button>
+
+
+<button
+    type="submit"
+    class="save-button"
+>
+Add Holding
+</button>
+
+</div>
+
+</form>
+
+</div>
+
+</div>
+
+
+<script src="/app.js"></script>
+
+</body>
+</html>
