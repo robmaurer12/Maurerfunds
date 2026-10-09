@@ -30,6 +30,33 @@ header {
     margin-top: 3px;
 }
 
+.daily-change {
+    text-align: right;
+}
+
+.daily-change-label {
+    color: #9ca3af;
+    font-size: 13px;
+    margin-bottom: 4px;
+}
+
+.daily-change-value {
+    font-size: 22px;
+    font-weight: bold;
+}
+
+.daily-change-value.positive {
+    color: #34d399;
+}
+
+.daily-change-value.negative {
+    color: #f87171;
+}
+
+.daily-change-value.neutral {
+    color: #9ca3af;
+}
+
 main {
     max-width: 1400px;
     margin: 40px auto;
@@ -153,9 +180,45 @@ tr:last-child td {
     color: #6b7280;
 }
 
+.chart-section {
+    margin-top: 40px;
+}
+
+.range-selector {
+    display: flex;
+    gap: 8px;
+}
+
+.range-button {
+    background: white;
+    color: #374151;
+    border: 1px solid #d1d5db;
+    padding: 7px 14px;
+    border-radius: 7px;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: bold;
+}
+
+.range-button:hover {
+    border-color: #111827;
+}
+
+.range-button.active {
+    background: #111827;
+    color: white;
+    border-color: #111827;
+}
+
+.chart-card {
+    background: white;
+    border-radius: 12px;
+    padding: 25px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.06);
+    height: 380px;
+}
+
 .modal-overlay {
-    display: none;
-    position: fixed;
     inset: 0;
     background: rgba(0,0,0,0.5);
     justify-content: center;
@@ -255,5 +318,19 @@ input:focus {
 
     .card-value {
         font-size: 24px;
+    }
+
+    .daily-change-value {
+        font-size: 18px;
+    }
+
+    .chart-card {
+        padding: 15px;
+        height: 300px;
+    }
+
+    .chart-section .section-header {
+        flex-direction: column;
+        align-items: flex-start;
     }
 }

@@ -30,6 +30,9 @@ async function loadHoldings() {
 
         console.error(error);
     }
+
+    loadDailyChange();
+    loadChart(currentRange);
 }
 
 
@@ -288,6 +291,206 @@ function updateSummary(holdings) {
 }
 
 
+async function loadDailyChange() {
+
+    const el = document.getElementById("dailyChange");
+
+    try {
+        const response = await fetch("/api/daily-change");
+
+        if (!response.ok) {
+            throw new Error("Failed to load daily change");
+        }
+
+        const data = await response.json();
+
+        setDailyChange(
+            Number(data.totalDailyChange) || 0,
+            Number(data.totalDailyChangePct) || 0
+        );
+    } catch (error) {
+        el.textContent = "--";
+        el.classList.remove("positive", "negative");
+        el.classList.add("neutral");
+    }
+}
+
+
+function setDailyChange(change, changePct) {
+
+    const el = document.getElementById("dailyChange");
+
+    const sign = change >= 0 ? "+" : "-";
+    const absChange = Math.abs(change).toLocaleString(undefined, {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2
+    });
+    const absPct = Math.abs(changePct).toFixed(2);
+
+    el.textContent = `${sign}$${absChange} (${sign}${absPct}%)`;
+
+    el.classList.remove("positive", "negative", "neutral");
+
+    if (change > 0) {
+        el.classList.add("positive");
+    } else if (change < 0) {
+        el.classList.add("negative");
+    } else {
+        el.classList.add("neutral");
+    }
+}
+
+
+let portfolioChart = null;
+
+let currentRange = "3m";
+
+const CHART_RANGES = {
+    "1m": { limit: 30, days: 30 },
+    "3m": { limit: 90, days: 90 },
+    "6m": { limit: 180, days: 180 },
+    "1y": { limit: 365, days: 365 }
+};
+
+
+async function loadChart(range = "3m") {
+
+    const canvas = document.getElementById("portfolioChart");
+
+    if (!canvas || typeof Chart === "undefined") {
+        return;
+    }
+
+    const config = CHART_RANGES[range] || CHART_RANGES["3m"];
+
+    try {
+        const response = await fetch(
+            `/api/portfolio/candles?interval=1d&limit=${config.limit}`
+        );
+
+        if (!response.ok) {
+            throw new Error("Failed to load chart data");
+        }
+
+        const series = await response.json();
+
+        const cutoff = Date.now() - config.days * 24 * 60 * 60 * 1000;
+
+        const points = (Array.isArray(series) ? series : []).filter(
+            point => point && point.timestamp >= cutoff
+        );
+
+        const labels = points.map(point =>
+            new Date(point.timestamp).toLocaleDateString()
+        );
+        const values = points.map(point => point.value);
+
+        renderChart(labels, values, range);
+    } catch (error) {
+        renderChart([], [], range);
+    }
+}
+
+
+function renderChart(labels, values, range) {
+
+    const canvas = document.getElementById("portfolioChart");
+
+    if (!canvas || typeof Chart === "undefined") {
+        return;
+    }
+
+    if (portfolioChart) {
+        portfolioChart.destroy();
+        portfolioChart = null;
+    }
+
+    portfolioChart = new Chart(canvas.getContext("2d"), {
+        type: "line",
+        data: {
+            labels: labels,
+            datasets: [
+                {
+                    label: "Portfolio Value",
+                    data: values,
+                    borderColor: "#111827",
+                    backgroundColor: "rgba(17, 24, 39, 0.08)",
+                    fill: true,
+                    tension: 0.25,
+                    pointRadius: 0,
+                    borderWidth: 2
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: {
+                mode: "index",
+                intersect: false
+            },
+            plugins: {
+                legend: {
+                    display: false
+                },
+                tooltip: {
+                    callbacks: {
+                        label: context =>
+                            "$" +
+                            Number(context.parsed.y).toLocaleString(undefined, {
+                                minimumFractionDigits: 2,
+                                maximumFractionDigits: 2
+                            })
+                    }
+                }
+            },
+            scales: {
+                x: {
+                    ticks: {
+                        maxTicksLimit: 8
+                    }
+                },
+                y: {
+                    ticks: {
+                        callback: value =>
+                            "$" + Number(value).toLocaleString()
+                    }
+                }
+            }
+        }
+    });
+}
+
+
+function initRangeSelector() {
+
+    const selector = document.getElementById("rangeSelector");
+
+    if (!selector) {
+        return;
+    }
+
+    selector.addEventListener("click", event => {
+
+        const button = event.target.closest(".range-button");
+
+        if (!button) {
+            return;
+        }
+
+        selector
+            .querySelectorAll(".range-button")
+            .forEach(btn => btn.classList.remove("active"));
+
+        button.classList.add("active");
+
+        currentRange = button.dataset.range;
+
+        loadChart(currentRange);
+    });
+}
+
+
 function openModal() {
 
     document.getElementById(
@@ -403,7 +606,9 @@ document
 
                 closeModal();
 
-                loadHoldings();
+initRangeSelector();
+
+loadHoldings();
 
 
             } catch (error) {
