@@ -190,7 +190,7 @@ export default {
 
                 const result = await env.DB
                     .prepare(
-                        "SELECT ticker, shares FROM holdings ORDER BY id"
+                        "SELECT ticker, shares, buy_date FROM holdings ORDER BY id"
                     )
                     .all();
 
@@ -267,28 +267,37 @@ export default {
                 const history = [];
 
                 for (const date of dates) {
-                    let value = 0;
-                    let allHavePrice = true;
-
+                    // Carry forward the latest known close for each ticker
                     for (const ticker of tickers) {
                         const close = closesByTicker[ticker][date];
                         if (close != null) {
                             lastClose[ticker] = close;
                         }
-                        if (lastClose[ticker] == null) {
-                            allHavePrice = false;
-                            break;
-                        }
-                        const holding = holdings.find(
-                            h => h.ticker === ticker
-                        );
-                        if (holding) {
-                            value +=
-                                Number(holding.shares) * lastClose[ticker];
-                        }
                     }
 
-                    if (allHavePrice) {
+                    let value = 0;
+                    let missing = false;
+
+                    for (const holding of holdings) {
+                        const buyDate = String(
+                            holding.buy_date || ""
+                        ).slice(0, 10);
+
+                        // Not owned yet on this date - contributes 0
+                        if (buyDate && date < buyDate) {
+                            continue;
+                        }
+
+                        const close = lastClose[holding.ticker];
+                        if (close == null) {
+                            missing = true;
+                            break;
+                        }
+
+                        value += Number(holding.shares) * close;
+                    }
+
+                    if (!missing) {
                         history.push({
                             timestamp: new Date(
                                 date + "T00:00:00Z"
