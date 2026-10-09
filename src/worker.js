@@ -2,6 +2,91 @@ function toDateKey(timestamp) {
     return new Date(Number(timestamp)).toISOString().slice(0, 10);
 }
 
+let schemaReady = false;
+
+async function ensureSchema(env) {
+    if (schemaReady) return;
+
+    await env.DB
+        .prepare(
+            "CREATE TABLE IF NOT EXISTS transactions (" +
+                "id INTEGER PRIMARY KEY AUTOINCREMENT, " +
+                "ticker TEXT, " +
+                "type TEXT NOT NULL, " +
+                "shares REAL NOT NULL DEFAULT 0, " +
+                "price REAL NOT NULL DEFAULT 0, " +
+                "amount REAL NOT NULL DEFAULT 0, " +
+                "date TEXT NOT NULL, " +
+                "is_initial INTEGER NOT NULL DEFAULT 0, " +
+                "created_at TEXT NOT NULL DEFAULT (datetime('now'))" +
+                ")"
+        )
+        .run();
+
+    schemaReady = true;
+}
+
+// If the transaction log is empty, seed it from existing holdings so the
+// history is complete. These initial buys are flagged and do not affect cash.
+async function seedInitialTransactions(env) {
+    const count = await env.DB
+        .prepare("SELECT COUNT(*) AS c FROM transactions")
+        .first();
+
+    if (count && count.c > 0) {
+        return;
+    }
+
+    const holdings = await env.DB
+        .prepare(
+            "SELECT ticker, shares, purchase_price, buy_date FROM holdings"
+        )
+        .all();
+
+    if (!holdings.results || holdings.results.length === 0) {
+        return;
+    }
+
+    const statements = holdings.results.map(holding =>
+        env.DB
+            .prepare(
+                "INSERT INTO transactions (ticker, type, shares, price, amount, date, is_initial) " +
+                    "VALUES (?, 'BUY', ?, ?, 0, ?, 1)"
+            )
+            .bind(
+                holding.ticker,
+                holding.shares,
+                holding.purchase_price,
+                holding.buy_date
+            )
+    );
+
+    await env.DB.batch(statements);
+}
+
+async function prepareTransactions(env) {
+    await ensureSchema(env);
+    await seedInitialTransactions(env);
+}
+
+async function getCash(env) {
+    const row = await env.DB
+        .prepare(
+            "SELECT COALESCE(SUM(" +
+                "CASE type " +
+                "WHEN 'BUY' THEN -(shares * price) " +
+                "WHEN 'SELL' THEN (shares * price) " +
+                "WHEN 'DEPOSIT' THEN amount " +
+                "WHEN 'WITHDRAW' THEN -amount " +
+                "ELSE 0 END" +
+                "), 0) AS cash " +
+                "FROM transactions WHERE is_initial = 0"
+        )
+        .first();
+
+    return row ? Number(row.cash) : 0;
+}
+
 export default {
     async fetch(request, env) {
         const url = new URL(request.url);
@@ -319,6 +404,8 @@ export default {
         // ADD HOLDING
         if (url.pathname === "/api/holdings" && request.method === "POST") {
             try {
+                await prepareTransactions(env);
+
                 const data = await request.json();
 
                 const ticker = String(data.ticker || "")
@@ -346,6 +433,19 @@ export default {
                 const result = await env.DB
                     .prepare(
                         "INSERT INTO holdings (ticker, shares, purchase_price, buy_date) VALUES (?, ?, ?, ?)"
+                    )
+                    .bind(
+                        ticker,
+                        shares,
+                        purchasePrice,
+                        buyDate
+                    )
+                    .run();
+
+                await env.DB
+                    .prepare(
+                        "INSERT INTO transactions (ticker, type, shares, price, amount, date, is_initial) " +
+                            "VALUES (?, 'BUY', ?, ?, 0, ?, 0)"
                     )
                     .bind(
                         ticker,
@@ -401,6 +501,168 @@ export default {
             }
         }
 
+
+        // GET CASH BALANCE
+        if (url.pathname === "/api/cash" && request.method === "GET") {
+            try {
+                await prepareTransactions(env);
+                const cash = await getCash(env);
+                return Response.json({ cash });
+            } catch (error) {
+                return Response.json(
+                    { error: error.message },
+                    { status: 500 }
+                );
+            }
+        }
+
+        // GET TRANSACTION HISTORY (buys, sells, deposits, withdrawals)
+        if (url.pathname === "/api/transactions" && request.method === "GET") {
+            try {
+                await prepareTransactions(env);
+
+                const result = await env.DB
+                    .prepare(
+                        "SELECT id, ticker, type, shares, price, amount, date, is_initial " +
+                            "FROM transactions ORDER BY date DESC, id DESC"
+                    )
+                    .all();
+
+                const cash = await getCash(env);
+
+                return Response.json({
+                    transactions: result.results,
+                    cash
+                });
+            } catch (error) {
+                return Response.json(
+                    { error: error.message },
+                    { status: 500 }
+                );
+            }
+        }
+
+        // SELL SHARES FROM A HOLDING
+        if (url.pathname === "/api/sell" && request.method === "POST") {
+            try {
+                await prepareTransactions(env);
+
+                const data = await request.json();
+
+                const holdingId = Number(data.holdingId);
+                const shares = Number(data.shares);
+                const price = Number(data.price);
+                const date = String(data.date || "");
+
+                if (
+                    !Number.isInteger(holdingId) ||
+                    !Number.isFinite(shares) ||
+                    shares <= 0 ||
+                    !Number.isFinite(price) ||
+                    price <= 0 ||
+                    !date
+                ) {
+                    return Response.json(
+                        { error: "Invalid sell data" },
+                        { status: 400 }
+                    );
+                }
+
+                const holding = await env.DB
+                    .prepare(
+                        "SELECT id, ticker, shares FROM holdings WHERE id = ?"
+                    )
+                    .bind(holdingId)
+                    .first();
+
+                if (!holding) {
+                    return Response.json(
+                        { error: "Holding not found" },
+                        { status: 404 }
+                    );
+                }
+
+                const ownedShares = Number(holding.shares);
+
+                if (shares > ownedShares) {
+                    return Response.json(
+                        { error: "Cannot sell more shares than you own" },
+                        { status: 400 }
+                    );
+                }
+
+                await env.DB
+                    .prepare(
+                        "INSERT INTO transactions (ticker, type, shares, price, amount, date, is_initial) " +
+                            "VALUES (?, 'SELL', ?, ?, 0, ?, 0)"
+                    )
+                    .bind(holding.ticker, shares, price, date)
+                    .run();
+
+                if (shares >= ownedShares) {
+                    await env.DB
+                        .prepare("DELETE FROM holdings WHERE id = ?")
+                        .bind(holdingId)
+                        .run();
+                } else {
+                    await env.DB
+                        .prepare(
+                            "UPDATE holdings SET shares = ? WHERE id = ?"
+                        )
+                        .bind(ownedShares - shares, holdingId)
+                        .run();
+                }
+
+                return Response.json({ success: true });
+            } catch (error) {
+                return Response.json(
+                    { error: error.message },
+                    { status: 500 }
+                );
+            }
+        }
+
+        // ADD OR WITHDRAW CASH
+        if (url.pathname === "/api/cash" && request.method === "POST") {
+            try {
+                await prepareTransactions(env);
+
+                const data = await request.json();
+
+                const type = String(data.type || "").toUpperCase();
+                const amount = Number(data.amount);
+                const date = String(data.date || "");
+
+                if (
+                    (type !== "DEPOSIT" && type !== "WITHDRAW") ||
+                    !Number.isFinite(amount) ||
+                    amount <= 0 ||
+                    !date
+                ) {
+                    return Response.json(
+                        { error: "Invalid cash data" },
+                        { status: 400 }
+                    );
+                }
+
+                await env.DB
+                    .prepare(
+                        "INSERT INTO transactions (ticker, type, shares, price, amount, date, is_initial) " +
+                            "VALUES (NULL, ?, 0, 0, ?, ?, 0)"
+                    )
+                    .bind(type, amount, date)
+                    .run();
+
+                const cash = await getCash(env);
+
+                return Response.json({ success: true, cash });
+            } catch (error) {
+                return Response.json(
+                    { error: error.message },
+                    { status: 500 }
+                );
+            }
+        }
 
         // EVERYTHING ELSE - STATIC FILES (index.html, styles.css, app.js)
         return env.ASSETS.fetch(request);

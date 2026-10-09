@@ -173,6 +173,22 @@ Total Shares
 
 </div>
 
+
+<div class="card">
+
+<div class="card-title">
+Cash Available
+</div>
+
+<div
+    class="card-value"
+    id="cashAvailable"
+>
+$0.00
+</div>
+
+</div>
+
 </div>
 
 
@@ -182,12 +198,23 @@ Total Shares
 Holdings
 </h2>
 
+<div class="header-actions">
+
+<button
+    class="secondary-button"
+    onclick="openCashModal()"
+>
+Add / Withdraw Cash
+</button>
+
 <button
     class="add-button"
     onclick="openModal()"
 >
 + Add Holding
 </button>
+
+</div>
 
 </div>
 
@@ -303,8 +330,57 @@ Portfolio Value
     id="tab-history"
 >
 
-<div class="empty">
-History coming soon.
+<div class="section-header">
+
+<h2>
+Transaction History
+</h2>
+
+</div>
+
+
+<div class="table-container">
+
+<table>
+
+<thead>
+
+<tr>
+
+<th>Date</th>
+
+<th>Type</th>
+
+<th>Ticker</th>
+
+<th>Shares</th>
+
+<th>Price</th>
+
+<th>Total</th>
+
+</tr>
+
+</thead>
+
+
+<tbody id="historyTable">
+
+<tr>
+
+<td
+    colspan="6"
+    class="empty"
+>
+Loading history...
+</td>
+
+</tr>
+
+</tbody>
+
+</table>
+
 </div>
 
 </div>
@@ -428,6 +504,204 @@ Cancel
     class="save-button"
 >
 Add Holding
+</button>
+
+</div>
+
+</form>
+
+</div>
+
+</div>
+
+
+<div
+    class="modal-overlay"
+    id="sellModal"
+>
+
+<div class="modal">
+
+<h2>
+Sell <span id="sellTicker"></span>
+</h2>
+
+
+<form id="sellForm">
+
+<div class="form-group">
+
+<label for="sellShares">
+Shares to Sell (max <span id="sellMax"></span>)
+</label>
+
+<input
+    type="number"
+    id="sellShares"
+    step="0.0001"
+    min="0.0001"
+    required
+>
+
+</div>
+
+
+<div class="form-group">
+
+<label for="sellPrice">
+Sale Price
+</label>
+
+<input
+    type="number"
+    id="sellPrice"
+    step="0.01"
+    min="0.01"
+    required
+>
+
+</div>
+
+
+<div class="form-group">
+
+<label for="sellDate">
+Sale Date
+</label>
+
+<input
+    type="date"
+    id="sellDate"
+    required
+>
+
+</div>
+
+
+<div
+    class="error"
+    id="sellError"
+>
+</div>
+
+
+<div class="modal-buttons">
+
+<button
+    type="button"
+    class="cancel-button"
+    onclick="closeSellModal()"
+>
+Cancel
+</button>
+
+
+<button
+    type="submit"
+    class="save-button"
+>
+Sell
+</button>
+
+</div>
+
+</form>
+
+</div>
+
+</div>
+
+
+<div
+    class="modal-overlay"
+    id="cashModal"
+>
+
+<div class="modal">
+
+<h2>
+Add / Withdraw Cash
+</h2>
+
+
+<form id="cashForm">
+
+<div class="form-group">
+
+<label for="cashType">
+Type
+</label>
+
+<select id="cashType">
+
+<option value="DEPOSIT">
+Deposit
+</option>
+
+<option value="WITHDRAW">
+Withdraw
+</option>
+
+</select>
+
+</div>
+
+
+<div class="form-group">
+
+<label for="cashAmount">
+Amount
+</label>
+
+<input
+    type="number"
+    id="cashAmount"
+    step="0.01"
+    min="0.01"
+    required
+>
+
+</div>
+
+
+<div class="form-group">
+
+<label for="cashDate">
+Date
+</label>
+
+<input
+    type="date"
+    id="cashDate"
+    required
+>
+
+</div>
+
+
+<div
+    class="error"
+    id="cashError"
+>
+</div>
+
+
+<div class="modal-buttons">
+
+<button
+    type="button"
+    class="cancel-button"
+    onclick="closeCashModal()"
+>
+Cancel
+</button>
+
+
+<button
+    type="submit"
+    class="save-button"
+>
+Save
 </button>
 
 </div>

@@ -31,8 +31,57 @@ async function loadHoldings() {
         console.error(error);
     }
 
+    loadCash();
     loadDailyChange();
     loadChart(currentRange);
+}
+
+
+let holdingCache = [];
+
+
+async function loadCash() {
+
+    const el = document.getElementById("cashAvailable");
+
+    if (!el) {
+        return;
+    }
+
+    try {
+        const response = await fetch("/api/cash");
+
+        if (!response.ok) {
+            throw new Error("Failed to load cash");
+        }
+
+        const data = await response.json();
+
+        renderCash(Number(data.cash) || 0);
+    } catch (error) {
+        renderCash(0);
+    }
+}
+
+
+function renderCash(cash) {
+
+    const el = document.getElementById("cashAvailable");
+
+    if (!el) {
+        return;
+    }
+
+    const sign = cash < 0 ? "-" : "";
+    el.textContent =
+        sign +
+        "$" +
+        Math.abs(cash).toLocaleString(undefined, {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2
+        });
+
+    el.classList.toggle("negative", cash < 0);
 }
 
 
@@ -150,13 +199,25 @@ function renderHoldings(holdings) {
 
             '<td>' +
 
-                '<button ' +
-                    'class="delete-button" ' +
-                    'onclick="deleteHolding(' +
-                    holding.id +
-                    ')">' +
-                    'Delete' +
-                '</button>' +
+                '<div class="row-actions">' +
+
+                    '<button ' +
+                        'class="sell-button" ' +
+                        'onclick="openSellModalById(' +
+                        holding.id +
+                        ')">' +
+                        'Sell' +
+                    '</button>' +
+
+                    '<button ' +
+                        'class="delete-button" ' +
+                        'onclick="deleteHolding(' +
+                        holding.id +
+                        ')">' +
+                        'Delete' +
+                    '</button>' +
+
+                '</div>' +
 
             '</td>';
 
@@ -165,6 +226,8 @@ function renderHoldings(holdings) {
 
     });
 
+
+    holdingCache = holdings;
 
     updateSummary(holdings);
 }
@@ -499,7 +562,126 @@ function initTabs() {
         if (target === "portfolio" && portfolioChart) {
             portfolioChart.resize();
         }
+
+        if (target === "history") {
+            loadHistory();
+        }
     });
+}
+
+
+async function loadHistory() {
+
+    const table = document.getElementById("historyTable");
+
+    if (!table) {
+        return;
+    }
+
+    try {
+        const response = await fetch("/api/transactions");
+
+        if (!response.ok) {
+            throw new Error("Failed to load history");
+        }
+
+        const data = await response.json();
+
+        renderHistory(data.transactions || []);
+    } catch (error) {
+        table.innerHTML =
+            '<tr>' +
+            '<td colspan="6" class="empty">' +
+            "Unable to load history." +
+            "</td>" +
+            "</tr>";
+    }
+}
+
+
+function renderHistory(transactions) {
+
+    const table = document.getElementById("historyTable");
+
+    if (!table) {
+        return;
+    }
+
+    if (!transactions.length) {
+        table.innerHTML =
+            '<tr>' +
+            '<td colspan="6" class="empty">' +
+            "No transactions yet." +
+            "</td>" +
+            "</tr>";
+        return;
+    }
+
+    table.innerHTML = transactions
+        .map(transaction => {
+
+            const type = String(transaction.type || "").toUpperCase();
+            const isBuy = type === "BUY";
+            const isSell = type === "SELL";
+
+            let ticker = transaction.ticker || "-";
+            let shares = "-";
+            let price = "-";
+            let total = "-";
+
+            if (isBuy || isSell) {
+                shares = Number(transaction.shares).toLocaleString();
+                price = formatCurrency(transaction.price);
+                total = formatCurrency(
+                    Number(transaction.shares) *
+                        Number(transaction.price)
+                );
+            } else {
+                total = formatCurrency(transaction.amount);
+            }
+
+            return (
+                "<tr>" +
+                "<td>" +
+                escapeHTML(transaction.date) +
+                "</td>" +
+                '<td><span class="badge ' +
+                type.toLowerCase() +
+                '">' +
+                escapeHTML(type) +
+                "</span></td>" +
+                "<td>" +
+                escapeHTML(ticker) +
+                "</td>" +
+                "<td>" +
+                escapeHTML(shares) +
+                "</td>" +
+                "<td>" +
+                escapeHTML(price) +
+                "</td>" +
+                "<td>" +
+                escapeHTML(total) +
+                "</td>" +
+                "</tr>"
+            );
+        })
+        .join("");
+}
+
+
+function formatCurrency(value) {
+
+    const number = Number(value) || 0;
+    const sign = number < 0 ? "-" : "";
+
+    return (
+        sign +
+        "$" +
+        Math.abs(number).toLocaleString(undefined, {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2
+        })
+    );
 }
 
 
@@ -556,6 +738,100 @@ function closeModal() {
 
     document.getElementById(
         "formError"
+    ).style.display = "none";
+}
+
+
+function todayISO() {
+
+    const now = new Date();
+    const local = new Date(
+        now.getTime() - now.getTimezoneOffset() * 60000
+    );
+
+    return local.toISOString().slice(0, 10);
+}
+
+
+function openSellModalById(holdingId) {
+
+    const holding = holdingCache.find(
+        item => Number(item.id) === Number(holdingId)
+    );
+
+    if (!holding) {
+        return;
+    }
+
+    const price =
+        holding.current_price != null
+            ? Number(holding.current_price)
+            : Number(holding.purchase_price) || 0;
+
+    const modal = document.getElementById("sellModal");
+
+    document.getElementById("sellTicker").textContent = holding.ticker;
+    document.getElementById("sellMax").textContent = Number(
+        holding.shares
+    ).toLocaleString();
+
+    document.getElementById("sellForm").dataset.holdingId = holdingId;
+
+    document.getElementById("sellShares").value = "";
+    document.getElementById("sellShares").max = holding.shares;
+    document.getElementById("sellPrice").value = price;
+    document.getElementById("sellDate").value = todayISO();
+
+    document.getElementById(
+        "sellError"
+    ).style.display = "none";
+
+    modal.style.display = "flex";
+
+    document.getElementById("sellShares").focus();
+}
+
+
+function closeSellModal() {
+
+    document.getElementById(
+        "sellModal"
+    ).style.display = "none";
+
+    document.getElementById("sellForm").reset();
+
+    document.getElementById(
+        "sellError"
+    ).style.display = "none";
+}
+
+
+function openCashModal() {
+
+    document.getElementById(
+        "cashModal"
+    ).style.display = "flex";
+
+    document.getElementById(
+        "cashDate"
+    ).value = todayISO();
+
+    document.getElementById(
+        "cashAmount"
+    ).focus();
+}
+
+
+function closeCashModal() {
+
+    document.getElementById(
+        "cashModal"
+    ).style.display = "none";
+
+    document.getElementById("cashForm").reset();
+
+    document.getElementById(
+        "cashError"
     ).style.display = "none";
 }
 
@@ -739,6 +1015,140 @@ document
 
             if (e.target === this) {
                 closeModal();
+            }
+
+        }
+    );
+
+
+document
+    .getElementById("sellModal")
+    .addEventListener(
+        "click",
+        function(e) {
+
+            if (e.target === this) {
+                closeSellModal();
+            }
+
+        }
+    );
+
+
+document
+    .getElementById("cashModal")
+    .addEventListener(
+        "click",
+        function(e) {
+
+            if (e.target === this) {
+                closeCashModal();
+            }
+
+        }
+    );
+
+
+document
+    .getElementById("sellForm")
+    .addEventListener(
+        "submit",
+        async function(e) {
+
+            e.preventDefault();
+
+            const errorBox = document.getElementById("sellError");
+
+            errorBox.style.display = "none";
+
+            const holdingId = Number(this.dataset.holdingId);
+            const shares = Number(
+                document.getElementById("sellShares").value
+            );
+            const price = Number(
+                document.getElementById("sellPrice").value
+            );
+            const date = document.getElementById("sellDate").value;
+
+            try {
+                const response = await fetch("/api/sell", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({
+                        holdingId,
+                        shares,
+                        price,
+                        date
+                    })
+                });
+
+                const result = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(
+                        result.error || "Failed to sell"
+                    );
+                }
+
+                closeSellModal();
+
+                loadHoldings();
+            } catch (error) {
+                errorBox.textContent = error.message;
+                errorBox.style.display = "block";
+            }
+
+        }
+    );
+
+
+document
+    .getElementById("cashForm")
+    .addEventListener(
+        "submit",
+        async function(e) {
+
+            e.preventDefault();
+
+            const errorBox = document.getElementById("cashError");
+
+            errorBox.style.display = "none";
+
+            const type = document.getElementById("cashType").value;
+            const amount = Number(
+                document.getElementById("cashAmount").value
+            );
+            const date = document.getElementById("cashDate").value;
+
+            try {
+                const response = await fetch("/api/cash", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({
+                        type,
+                        amount,
+                        date
+                    })
+                });
+
+                const result = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(
+                        result.error || "Failed to save cash"
+                    );
+                }
+
+                closeCashModal();
+
+                loadCash();
+            } catch (error) {
+                errorBox.textContent = error.message;
+                errorBox.style.display = "block";
             }
 
         }
