@@ -63,6 +63,42 @@ main {
     padding: 0 20px;
 }
 
+.tabs {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 25px;
+    border-bottom: 1px solid #e5e7eb;
+}
+
+.tab-button {
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    padding: 12px 18px;
+    margin-bottom: -1px;
+    cursor: pointer;
+    font-size: 15px;
+    font-weight: bold;
+    color: #6b7280;
+}
+
+.tab-button:hover {
+    color: #111827;
+}
+
+.tab-button.active {
+    color: #111827;
+    border-bottom-color: #111827;
+}
+
+.tab-panel {
+    display: none;
+}
+
+.tab-panel.active {
+    display: block;
+}
+
 .summary {
     display: grid;
     grid-template-columns: repeat(3, 1fr);

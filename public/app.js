@@ -467,6 +467,42 @@ function renderChart(labels, values, range) {
 }
 
 
+function initTabs() {
+
+    const tabs = document.getElementById("tabs");
+
+    if (!tabs) {
+        return;
+    }
+
+    tabs.addEventListener("click", event => {
+
+        const button = event.target.closest(".tab-button");
+
+        if (!button) {
+            return;
+        }
+
+        const target = button.dataset.tab;
+
+        tabs.querySelectorAll(".tab-button").forEach(btn => {
+            btn.classList.toggle("active", btn === button);
+        });
+
+        document.querySelectorAll(".tab-panel").forEach(panel => {
+            panel.classList.toggle(
+                "active",
+                panel.id === "tab-" + target
+            );
+        });
+
+        if (target === "portfolio" && portfolioChart) {
+            portfolioChart.resize();
+        }
+    });
+}
+
+
 function initRangeSelector() {
 
     const selector = document.getElementById("rangeSelector");
@@ -708,6 +744,8 @@ document
         }
     );
 
+
+initTabs();
 
 initRangeSelector();
 
