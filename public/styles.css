@@ -219,11 +219,14 @@ tr:last-child td {
 }
 
 .modal-overlay {
+    display: none;
+    position: fixed;
     inset: 0;
     background: rgba(0,0,0,0.5);
     justify-content: center;
     align-items: center;
     padding: 20px;
+    z-index: 1000;
 }
 
 .modal {

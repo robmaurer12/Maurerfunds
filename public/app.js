@@ -320,7 +320,7 @@ function setDailyChange(change, changePct) {
 
     const el = document.getElementById("dailyChange");
 
-    const sign = change >= 0 ? "+" : "-";
+    const sign = change > 0 ? "+" : change < 0 ? "-" : "";
     const absChange = Math.abs(change).toLocaleString(undefined, {
         minimumFractionDigits: 2,
         maximumFractionDigits: 2
@@ -380,6 +380,11 @@ async function loadChart(range = "3m") {
             point => point && point.timestamp >= cutoff
         );
 
+        if (points.length === 0) {
+            renderChart(["Start", "Now"], [0, 0], range);
+            return;
+        }
+
         const labels = points.map(point =>
             new Date(point.timestamp).toLocaleDateString()
         );
@@ -387,7 +392,7 @@ async function loadChart(range = "3m") {
 
         renderChart(labels, values, range);
     } catch (error) {
-        renderChart([], [], range);
+        renderChart(["Start", "Now"], [0, 0], range);
     }
 }
 
@@ -606,9 +611,7 @@ document
 
                 closeModal();
 
-initRangeSelector();
-
-loadHoldings();
+                loadHoldings();
 
 
             } catch (error) {
@@ -705,5 +708,7 @@ document
         }
     );
 
+
+initRangeSelector();
 
 loadHoldings();
