@@ -1,3 +1,180 @@
+let currentUser = null;
+
+let authMode = "login";
+
+
+async function authFetch(path, options) {
+
+    const response =
+        await fetch(path, options);
+
+    if (response.status === 401) {
+
+        showAuthScreen();
+
+        throw new Error(
+            "Please sign in to continue."
+        );
+    }
+
+    return response;
+}
+
+
+function setCurrentUser(user) {
+
+    currentUser =
+        user || null;
+
+    const el =
+        document.getElementById(
+            "userEmail"
+        );
+
+    if (el) {
+        el.textContent =
+            currentUser
+                ? currentUser.email
+                : "";
+    }
+}
+
+
+function showAuthScreen() {
+
+    document.getElementById(
+        "authScreen"
+    ).style.display = "flex";
+
+    document.getElementById(
+        "appShell"
+    ).style.display = "none";
+}
+
+
+function showAppScreen() {
+
+    document.getElementById(
+        "authScreen"
+    ).style.display = "none";
+
+    document.getElementById(
+        "appShell"
+    ).style.display = "block";
+}
+
+
+function setAuthMode(mode) {
+
+    authMode = mode;
+
+    const isRegister =
+        mode === "register";
+
+    document.getElementById(
+        "authTitle"
+    ).textContent =
+        isRegister
+            ? "Create Account"
+            : "Sign In";
+
+    document.getElementById(
+        "authSubmit"
+    ).textContent =
+        isRegister
+            ? "Create Account"
+            : "Sign In";
+
+    document.getElementById(
+        "authToggle"
+    ).textContent =
+        isRegister
+            ? "Already have an account? Sign in"
+            : "Need an account? Register";
+
+    document.getElementById(
+        "authPassword"
+    ).autocomplete =
+        isRegister
+            ? "new-password"
+            : "current-password";
+
+    document.getElementById(
+        "authError"
+    ).style.display = "none";
+}
+
+
+function toggleAuthMode() {
+
+    setAuthMode(
+        authMode === "login"
+            ? "register"
+            : "login"
+    );
+}
+
+
+async function signOut() {
+
+    try {
+
+        await fetch(
+            "/api/auth/logout",
+            { method: "POST" }
+        );
+
+    } catch (error) {
+
+        console.error(error);
+    }
+
+    holdingCache = [];
+
+    if (portfolioChart) {
+
+        portfolioChart.destroy();
+        portfolioChart = null;
+    }
+
+    setCurrentUser(null);
+
+    showAuthScreen();
+}
+
+
+async function initApp() {
+
+    try {
+
+        const response =
+            await fetch(
+                "/api/auth/me"
+            );
+
+        if (!response.ok) {
+
+            showAuthScreen();
+
+            return;
+        }
+
+        const data =
+            await response.json();
+
+        setCurrentUser(data.user);
+
+        showAppScreen();
+
+        loadHoldings();
+
+    } catch (error) {
+
+        showAuthScreen();
+    }
+}
+
+
 async function loadHoldings() {
 
     const table =
@@ -6,7 +183,7 @@ async function loadHoldings() {
     try {
 
         const response =
-            await fetch("/api/holdings");
+            await authFetch("/api/holdings");
 
         if (!response.ok) {
             throw new Error(
@@ -49,7 +226,7 @@ async function loadCash() {
     }
 
     try {
-        const response = await fetch("/api/cash");
+        const response = await authFetch("/api/cash");
 
         if (!response.ok) {
             throw new Error("Failed to load cash");
@@ -359,7 +536,7 @@ async function loadDailyChange() {
     const el = document.getElementById("dailyChange");
 
     try {
-        const response = await fetch("/api/daily-change");
+        const response = await authFetch("/api/daily-change");
 
         if (!response.ok) {
             throw new Error("Failed to load daily change");
@@ -427,7 +604,7 @@ async function loadChart(range = "3m") {
     const config = CHART_RANGES[range] || CHART_RANGES["3m"];
 
     try {
-        const response = await fetch(
+        const response = await authFetch(
             `/api/portfolio/candles?interval=1d&limit=${config.limit}`
         );
 
@@ -579,7 +756,7 @@ async function loadHistory() {
     }
 
     try {
-        const response = await fetch("/api/transactions");
+        const response = await authFetch("/api/transactions");
 
         if (!response.ok) {
             throw new Error("Failed to load history");
@@ -887,7 +1064,7 @@ document
             try {
 
                 const response =
-                    await fetch(
+                    await authFetch(
                         "/api/holdings",
                         {
                             method: "POST",
@@ -953,7 +1130,7 @@ async function deleteHolding(id) {
     try {
 
         const response =
-            await fetch(
+            await authFetch(
                 "/api/holdings/" + id,
                 {
                     method: "DELETE"
@@ -1071,7 +1248,7 @@ document
             const date = document.getElementById("sellDate").value;
 
             try {
-                const response = await fetch("/api/sell", {
+                const response = await authFetch("/api/sell", {
                     method: "POST",
                     headers: {
                         "Content-Type": "application/json"
@@ -1123,7 +1300,7 @@ document
             const date = document.getElementById("cashDate").value;
 
             try {
-                const response = await fetch("/api/cash", {
+                const response = await authFetch("/api/cash", {
                     method: "POST",
                     headers: {
                         "Content-Type": "application/json"
@@ -1155,8 +1332,93 @@ document
     );
 
 
+document
+    .getElementById("authForm")
+    .addEventListener(
+        "submit",
+        async function(e) {
+
+            e.preventDefault();
+
+            const errorBox =
+                document.getElementById(
+                    "authError"
+                );
+
+            errorBox.style.display =
+                "none";
+
+            const email =
+                document.getElementById(
+                    "authEmail"
+                ).value.trim();
+
+            const password =
+                document.getElementById(
+                    "authPassword"
+                ).value;
+
+            const path =
+                authMode === "login"
+                    ? "/api/auth/login"
+                    : "/api/auth/register";
+
+            try {
+
+                const response =
+                    await fetch(
+                        path,
+                        {
+                            method: "POST",
+
+                            headers: {
+                                "Content-Type":
+                                    "application/json"
+                            },
+
+                            body: JSON.stringify({
+                                email: email,
+                                password: password
+                            })
+                        }
+                    );
+
+                const result =
+                    await response.json();
+
+                if (!response.ok) {
+
+                    throw new Error(
+                        result.error ||
+                        "Unable to sign in."
+                    );
+                }
+
+                setCurrentUser(result.user);
+
+                document.getElementById(
+                    "authPassword"
+                ).value = "";
+
+                showAppScreen();
+
+                loadHoldings();
+
+            } catch (error) {
+
+                errorBox.textContent =
+                    error.message;
+
+                errorBox.style.display =
+                    "block";
+            }
+
+        }
+    );
+
+
 initTabs();
 
 initRangeSelector();
 
-loadHoldings();
+initApp();

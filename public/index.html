@@ -14,12 +14,106 @@
 
 <link
     rel="stylesheet"
-    href="/styles.css"
+    href="./styles.css"
 >
 
 </head>
 
 <body>
+
+
+<div
+    class="auth-screen"
+    id="authScreen"
+>
+
+<div class="auth-card">
+
+<div class="logo">
+MaurerFunds
+</div>
+
+<div class="subtitle">
+Investment Portfolio
+</div>
+
+<h2 id="authTitle">
+Sign In
+</h2>
+
+<form id="authForm">
+
+<div class="form-group">
+
+<label for="authEmail">
+Email
+</label>
+
+<input
+    type="email"
+    id="authEmail"
+    placeholder="you@example.com"
+    autocomplete="email"
+    required
+>
+
+</div>
+
+
+<div class="form-group">
+
+<label for="authPassword">
+Password
+</label>
+
+<input
+    type="password"
+    id="authPassword"
+    placeholder="At least 8 characters"
+    autocomplete="current-password"
+    required
+>
+
+</div>
+
+
+<div
+    class="error"
+    id="authError"
+>
+</div>
+
+
+<div class="modal-buttons">
+
+<button
+    type="submit"
+    class="save-button"
+    id="authSubmit"
+>
+Sign In
+</button>
+
+</div>
+
+</form>
+
+
+<button
+    type="button"
+    class="auth-toggle"
+    id="authToggle"
+    onclick="toggleAuthMode()"
+>
+Need an account? Register
+</button>
+
+</div>
+
+</div>
+
+
+<div id="appShell">
 
 <header>
 
@@ -35,6 +129,8 @@ Investment Portfolio
 
 </div>
 
+<div class="header-right">
+
 <div class="daily-change">
 
 <div class="daily-change-label">
@@ -46,6 +142,22 @@ Today's Change
     id="dailyChange"
 >
 --
+</div>
+
+</div>
+
+<div class="header-user">
+
+<span id="userEmail"></span>
+
+<button
+    type="button"
+    class="sign-out-button"
+    onclick="signOut()"
+>
+Sign Out
+</button>
+
 </div>
 
 </div>
@@ -399,6 +511,8 @@ Analysis coming soon.
 
 </main>
 
+</div>
+
 
 <div
     class="modal-overlay"
@@ -715,7 +829,7 @@ Save
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 
-<script src="/app.js"></script>
+<script src="./app.js"></script>
 
 </body>
 </html>
