@@ -6,6 +6,84 @@ const DUMMY_SALT_B64 = "MDEyMzQ1Njc4OWFiY2RlZg==";
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
+let schemaPromise = null;
+
+const SCHEMA_STATEMENTS = [
+    "CREATE TABLE IF NOT EXISTS users (" +
+        "id TEXT PRIMARY KEY, " +
+        "email TEXT NOT NULL UNIQUE, " +
+        "password_hash TEXT NOT NULL, " +
+        "created_at TEXT NOT NULL DEFAULT (datetime('now'))" +
+        ")",
+    "CREATE TABLE IF NOT EXISTS holdings (" +
+        "id INTEGER PRIMARY KEY AUTOINCREMENT, " +
+        "user_id TEXT, " +
+        "ticker TEXT, " +
+        "shares REAL NOT NULL DEFAULT 0, " +
+        "purchase_price REAL NOT NULL DEFAULT 0, " +
+        "buy_date TEXT NOT NULL" +
+        ")",
+    "CREATE TABLE IF NOT EXISTS transactions (" +
+        "id INTEGER PRIMARY KEY AUTOINCREMENT, " +
+        "user_id TEXT, " +
+        "ticker TEXT, " +
+        "type TEXT NOT NULL, " +
+        "shares REAL NOT NULL DEFAULT 0, " +
+        "price REAL NOT NULL DEFAULT 0, " +
+        "amount REAL NOT NULL DEFAULT 0, " +
+        "date TEXT NOT NULL, " +
+        "is_initial INTEGER NOT NULL DEFAULT 0, " +
+        "created_at TEXT NOT NULL DEFAULT (datetime('now'))" +
+        ")"
+];
+
+async function addUserIdColumn(env, table) {
+    try {
+        await env.DB
+            .prepare("ALTER TABLE " + table + " ADD COLUMN user_id TEXT")
+            .run();
+    } catch (error) {
+        if (
+            !error ||
+            !/duplicate column name/i.test(String(error.message))
+        ) {
+            throw error;
+        }
+    }
+}
+
+async function setupSchema(env) {
+    for (const statement of SCHEMA_STATEMENTS) {
+        await env.DB.prepare(statement).run();
+    }
+
+    await addUserIdColumn(env, "holdings");
+    await addUserIdColumn(env, "transactions");
+
+    await env.DB
+        .prepare(
+            "CREATE INDEX IF NOT EXISTS idx_holdings_user_id ON holdings(user_id)"
+        )
+        .run();
+
+    await env.DB
+        .prepare(
+            "CREATE INDEX IF NOT EXISTS idx_transactions_user_id ON transactions(user_id)"
+        )
+        .run();
+}
+
+async function ensureSchema(env) {
+    if (!schemaPromise) {
+        schemaPromise = setupSchema(env).catch(error => {
+            schemaPromise = null;
+            throw error;
+        });
+    }
+
+    return schemaPromise;
+}
+
 function bytesToBase64(bytes) {
     let binary = "";
 
@@ -294,6 +372,13 @@ function isSameOrigin(request) {
 async function handleAuth(request, env, url, pathname) {
     const method = request.method.toUpperCase();
 
+    if (!env.SESSION_SECRET) {
+        return Response.json(
+            { error: "Session secret is not configured on the server." },
+            { status: 500 }
+        );
+    }
+
     if (pathname === "/api/auth/me" && method === "GET") {
         const user = await getSessionUser(request, env);
 
@@ -467,6 +552,8 @@ export default {
                     { status: 403 }
                 );
             }
+
+            await ensureSchema(env);
 
             if (pathname.startsWith("/api/auth/")) {
                 return handleAuth(request, env, url, pathname);
