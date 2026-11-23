@@ -131,6 +131,8 @@ async function signOut() {
 
     holdingCache = [];
 
+    resetChartDrag();
+
     if (portfolioChart) {
 
         portfolioChart.destroy();
@@ -217,6 +219,8 @@ async function loadHoldings() {
 
 
 let holdingCache = [];
+
+let sp500Loaded = false;
 
 
 async function loadCash() {
@@ -683,11 +687,25 @@ let portfolioChart = null;
 
 let currentRange = "3m";
 
+const MAX_CHART_LIMIT = 100000;
+
+let chartPoints = [];
+
+let chartDragActive = false;
+
+let chartDragStartIndex = null;
+
+let chartDragCurrentIndex = null;
+
+let chartDragPointerId = null;
+
 const CHART_RANGES = {
     "1m": { limit: 30, days: 30 },
     "3m": { limit: 90, days: 90 },
     "6m": { limit: 180, days: 180 },
-    "1y": { limit: 365, days: 365 }
+    "1y": { limit: 365, days: 365 },
+    "5y": { limit: 1825, days: 1825 },
+    "max": { limit: MAX_CHART_LIMIT, days: null }
 };
 
 
@@ -701,6 +719,8 @@ async function loadChart(range = "3m") {
 
     const config = CHART_RANGES[range] || CHART_RANGES["3m"];
 
+    resetChartDrag();
+
     try {
         const response = await authFetch(
             `/api/portfolio/candles?interval=1d&limit=${config.limit}`
@@ -712,14 +732,30 @@ async function loadChart(range = "3m") {
 
         const series = await response.json();
 
-        const cutoff = Date.now() - config.days * 24 * 60 * 60 * 1000;
+        let points = (Array.isArray(series) ? series : [])
+            .filter(point =>
+                point &&
+                point.timestamp != null &&
+                point.value != null &&
+                Number.isFinite(Number(point.timestamp)) &&
+                Number.isFinite(Number(point.value))
+            )
+            .map(point => ({
+                timestamp: Number(point.timestamp),
+                value: Number(point.value)
+            }));
 
-        const points = (Array.isArray(series) ? series : []).filter(
-            point => point && point.timestamp >= cutoff
-        );
+        if (config.days !== null) {
+
+            const cutoff =
+                Date.now() - config.days * 24 * 60 * 60 * 1000;
+
+            points = points.filter(point => point.timestamp >= cutoff);
+        }
 
         if (points.length === 0) {
-            renderChart(["Start", "Now"], [0, 0], range);
+            chartPoints = [];
+            renderChart(["Start", "Now"], [0, 0], range, []);
             return;
         }
 
@@ -728,20 +764,85 @@ async function loadChart(range = "3m") {
         );
         const values = points.map(point => point.value);
 
-        renderChart(labels, values, range);
+        chartPoints = points;
+
+        renderChart(labels, values, range, points);
     } catch (error) {
-        renderChart(["Start", "Now"], [0, 0], range);
+        chartPoints = [];
+        renderChart(["Start", "Now"], [0, 0], range, []);
     }
 }
 
 
-function renderChart(labels, values, range) {
+const dragOverlayPlugin = {
+    id: "dragOverlayPlugin",
+    afterDatasetsDraw: function(chart) {
+
+        if (
+            !chartDragActive ||
+            chartDragStartIndex === null ||
+            chartDragCurrentIndex === null
+        ) {
+            return;
+        }
+
+        const startIndex = Math.min(
+            chartDragStartIndex,
+            chartDragCurrentIndex
+        );
+
+        const endIndex = Math.max(
+            chartDragStartIndex,
+            chartDragCurrentIndex
+        );
+
+        const xScale = chart.scales.x;
+
+        if (!xScale) {
+            return;
+        }
+
+        const x1 = xScale.getPixelForValue(startIndex);
+        const x2 = xScale.getPixelForValue(endIndex);
+        const area = chart.chartArea;
+
+        chart.ctx.save();
+
+        chart.ctx.fillStyle = "rgba(17, 24, 39, 0.06)";
+        chart.ctx.fillRect(
+            Math.min(x1, x2),
+            area.top,
+            Math.abs(x2 - x1),
+            area.bottom - area.top
+        );
+
+        chart.ctx.strokeStyle = "rgba(17, 24, 39, 0.35)";
+        chart.ctx.lineWidth = 1;
+        chart.ctx.setLineDash([4, 4]);
+
+        chart.ctx.beginPath();
+        chart.ctx.moveTo(x1, area.top);
+        chart.ctx.lineTo(x1, area.bottom);
+        chart.ctx.moveTo(x2, area.top);
+        chart.ctx.lineTo(x2, area.bottom);
+        chart.ctx.stroke();
+
+        chart.ctx.restore();
+    }
+};
+
+
+function renderChart(labels, values, range, points) {
 
     const canvas = document.getElementById("portfolioChart");
 
     if (!canvas || typeof Chart === "undefined") {
         return;
     }
+
+    resetChartDrag();
+
+    chartPoints = points || [];
 
     if (portfolioChart) {
         portfolioChart.destroy();
@@ -765,6 +866,7 @@ function renderChart(labels, values, range) {
                 }
             ]
         },
+        plugins: [dragOverlayPlugin],
         options: {
             responsive: true,
             maintainAspectRatio: false,
@@ -805,6 +907,299 @@ function renderChart(labels, values, range) {
 }
 
 
+function getChartIndexFromPointer(event) {
+
+    const chart = portfolioChart;
+
+    if (
+        !chart ||
+        !chart.chartArea ||
+        !chart.scales.x ||
+        chartPoints.length === 0
+    ) {
+        return null;
+    }
+
+    const rect = chart.canvas.getBoundingClientRect();
+
+    const rawIndex =
+        chart.scales.x.getValueForPixel(event.clientX - rect.left);
+
+    if (!Number.isFinite(rawIndex)) {
+        return null;
+    }
+
+    return Math.max(
+        0,
+        Math.min(chartPoints.length - 1, Math.round(rawIndex))
+    );
+}
+
+
+function getDragPercent() {
+
+    if (
+        chartDragStartIndex === null ||
+        chartDragCurrentIndex === null ||
+        chartPoints.length === 0
+    ) {
+        return null;
+    }
+
+    const startIndex = Math.min(
+        chartDragStartIndex,
+        chartDragCurrentIndex
+    );
+
+    const endIndex = Math.max(
+        chartDragStartIndex,
+        chartDragCurrentIndex
+    );
+
+    const startValue =
+        Number(chartPoints[startIndex].value);
+
+    const endValue =
+        Number(chartPoints[endIndex].value);
+
+    if (
+        !Number.isFinite(startValue) ||
+        !Number.isFinite(endValue) ||
+        startValue <= 0
+    ) {
+        return null;
+    }
+
+    return ((endValue - startValue) / startValue) * 100;
+}
+
+
+function updateChartDragLabel() {
+
+    const label =
+        document.getElementById("chartDragLabel");
+
+    if (!label) {
+        return;
+    }
+
+    if (
+        !chartDragActive ||
+        chartDragStartIndex === null ||
+        chartDragCurrentIndex === null ||
+        !portfolioChart ||
+        !portfolioChart.chartArea
+    ) {
+
+        label.hidden = true;
+        label.textContent = "";
+        label.className = "chart-drag-label";
+
+        return;
+    }
+
+    const percent = getDragPercent();
+
+    label.hidden = false;
+
+    if (percent === null) {
+
+        label.textContent = "Unavailable";
+        label.className = "chart-drag-label";
+
+        return;
+    }
+
+    label.textContent =
+        (percent >= 0 ? "+" : "") +
+        percent.toFixed(2) +
+        "%";
+
+    label.className =
+        "chart-drag-label " +
+        (percent >= 0 ? "gain" : "loss");
+
+    const startIndex = Math.min(
+        chartDragStartIndex,
+        chartDragCurrentIndex
+    );
+
+    const endIndex = Math.max(
+        chartDragStartIndex,
+        chartDragCurrentIndex
+    );
+
+    const xScale = portfolioChart.scales.x;
+
+    if (!xScale) {
+        return;
+    }
+
+    const x1 = xScale.getPixelForValue(startIndex);
+    const x2 = xScale.getPixelForValue(endIndex);
+
+    const canvasRect =
+        portfolioChart.canvas.getBoundingClientRect();
+
+    const cardRect =
+        portfolioChart.canvas.parentElement.getBoundingClientRect();
+
+    const left =
+        canvasRect.left -
+        cardRect.left +
+        (x1 + x2) / 2;
+
+    const maxLeft = Math.max(60, cardRect.width - 60);
+
+    label.style.left =
+        Math.max(60, Math.min(maxLeft, left)) + "px";
+
+    label.style.top =
+        canvasRect.top -
+        cardRect.top +
+        portfolioChart.chartArea.top +
+        8 +
+        "px";
+}
+
+
+function resetChartDrag() {
+
+    chartDragActive = false;
+    chartDragStartIndex = null;
+    chartDragCurrentIndex = null;
+    chartDragPointerId = null;
+
+    const label =
+        document.getElementById("chartDragLabel");
+
+    if (label) {
+
+        label.hidden = true;
+        label.textContent = "";
+        label.className = "chart-drag-label";
+    }
+
+    if (
+        portfolioChart &&
+        portfolioChart.options.plugins.tooltip
+    ) {
+        portfolioChart.options.plugins.tooltip.enabled = true;
+    }
+}
+
+
+function endChartDrag(event) {
+
+    if (
+        !chartDragActive ||
+        (
+            chartDragPointerId !== null &&
+            event.pointerId !== chartDragPointerId
+        )
+    ) {
+        return;
+    }
+
+    const canvas = document.getElementById("portfolioChart");
+
+    if (
+        canvas &&
+        canvas.hasPointerCapture &&
+        canvas.hasPointerCapture(event.pointerId)
+    ) {
+        canvas.releasePointerCapture(event.pointerId);
+    }
+
+    resetChartDrag();
+
+    if (portfolioChart) {
+        portfolioChart.update("none");
+    }
+}
+
+
+function initChartDrag() {
+
+    const canvas = document.getElementById("portfolioChart");
+
+    if (!canvas || canvas.dataset.dragInitialized === "true") {
+        return;
+    }
+
+    canvas.dataset.dragInitialized = "true";
+
+    canvas.addEventListener("pointerdown", event => {
+
+        if (
+            event.pointerType === "mouse" &&
+            event.button !== 0
+        ) {
+            return;
+        }
+
+        const index = getChartIndexFromPointer(event);
+
+        if (index === null) {
+            return;
+        }
+
+        event.preventDefault();
+
+        chartDragActive = true;
+        chartDragStartIndex = index;
+        chartDragCurrentIndex = index;
+        chartDragPointerId = event.pointerId;
+
+        if (canvas.setPointerCapture) {
+            canvas.setPointerCapture(event.pointerId);
+        }
+
+        if (
+            portfolioChart &&
+            portfolioChart.options.plugins.tooltip
+        ) {
+            portfolioChart.options.plugins.tooltip.enabled = false;
+        }
+
+        portfolioChart.update("none");
+
+        updateChartDragLabel();
+    });
+
+    canvas.addEventListener("pointermove", event => {
+
+        if (
+            !chartDragActive ||
+            (
+                chartDragPointerId !== null &&
+                event.pointerId !== chartDragPointerId
+            )
+        ) {
+            return;
+        }
+
+        const index = getChartIndexFromPointer(event);
+
+        if (index === null) {
+            return;
+        }
+
+        event.preventDefault();
+
+        chartDragCurrentIndex = index;
+
+        portfolioChart.update("none");
+
+        updateChartDragLabel();
+    });
+
+    canvas.addEventListener("pointerup", endChartDrag);
+    canvas.addEventListener("pointercancel", endChartDrag);
+    canvas.addEventListener("lostpointercapture", endChartDrag);
+}
+
+
 function initTabs() {
 
     const tabs = document.getElementById("tabs");
@@ -823,6 +1218,8 @@ function initTabs() {
 
         const target = button.dataset.tab;
 
+        resetChartDrag();
+
         tabs.querySelectorAll(".tab-button").forEach(btn => {
             btn.classList.toggle("active", btn === button);
         });
@@ -840,6 +1237,10 @@ function initTabs() {
 
         if (target === "history") {
             loadHistory();
+        }
+
+        if (target === "analysis") {
+            loadSp500();
         }
     });
 }
@@ -941,6 +1342,64 @@ function renderHistory(transactions) {
             );
         })
         .join("");
+}
+
+
+async function loadSp500() {
+
+    if (sp500Loaded) {
+        return;
+    }
+
+    const tbody = document.getElementById("sp500Table");
+
+    if (!tbody) {
+        return;
+    }
+
+    try {
+
+        const response = await fetch("/snp500.txt");
+
+        if (!response.ok) {
+            throw new Error("Failed to load S&P 500 tickers");
+        }
+
+        const text = await response.text();
+
+        const tickers = text
+            .split(/\r?\n/)
+            .map(ticker => ticker.trim().toUpperCase())
+            .filter(Boolean);
+
+        if (tickers.length === 0) {
+            throw new Error("No tickers found");
+        }
+
+        tbody.innerHTML = tickers
+            .map(ticker =>
+                "<tr>" +
+                "<td>" +
+                '<span class="ticker">' +
+                escapeHTML(ticker) +
+                "</span>" +
+                "</td>" +
+                "</tr>"
+            )
+            .join("");
+
+        sp500Loaded = true;
+    } catch (error) {
+
+        tbody.innerHTML =
+            '<tr>' +
+            '<td colspan="1" class="empty">' +
+            "Unable to load tickers." +
+            "</td>" +
+            "</tr>";
+
+        console.error(error);
+    }
 }
 
 
@@ -1518,5 +1977,7 @@ document
 initTabs();
 
 initRangeSelector();
+
+initChartDrag();
 
 initApp();

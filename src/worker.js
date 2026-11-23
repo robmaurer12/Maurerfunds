@@ -864,10 +864,15 @@ export default {
                 try {
                     const interval =
                         url.searchParams.get("interval") || "1d";
-                    const limit = parseInt(
+                    const parsedLimit = parseInt(
                         url.searchParams.get("limit") || "30",
                         10
                     );
+
+                    const limit =
+                        Number.isFinite(parsedLimit)
+                            ? Math.min(Math.max(parsedLimit, 1), 100000)
+                            : 30;
 
                     const result = await env.DB
                         .prepare(
@@ -881,6 +886,21 @@ export default {
 
                     if (holdings.length === 0) {
                         return Response.json([]);
+                    }
+
+                    let earliestBuyDate = "";
+
+                    for (const holding of holdings) {
+                        const buyDate =
+                            String(holding.buy_date || "").slice(0, 10);
+
+                        if (
+                            buyDate &&
+                            (!earliestBuyDate ||
+                                buyDate < earliestBuyDate)
+                        ) {
+                            earliestBuyDate = buyDate;
+                        }
                     }
 
                     const tickers = [
@@ -952,6 +972,14 @@ export default {
                     const history = [];
 
                     for (const date of dates) {
+
+                        if (
+                            earliestBuyDate &&
+                            date < earliestBuyDate
+                        ) {
+                            continue;
+                        }
+
                         for (const ticker of tickers) {
                             const close = closesByTicker[ticker][date];
                             if (close != null) {

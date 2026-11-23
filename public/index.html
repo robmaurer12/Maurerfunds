@@ -454,6 +454,22 @@ Portfolio Value
 1Y
 </button>
 
+<button
+    type="button"
+    class="range-button"
+    data-range="5y"
+>
+5Y
+</button>
+
+<button
+    type="button"
+    class="range-button"
+    data-range="max"
+>
+MAX
+</button>
+
 </div>
 
 </div>
@@ -461,6 +477,14 @@ Portfolio Value
 <div class="chart-card">
 
 <canvas id="portfolioChart"></canvas>
+
+<div
+    class="chart-drag-label"
+    id="chartDragLabel"
+    hidden
+>
+--
+</div>
 
 </div>
 
@@ -535,8 +559,47 @@ Loading history...
     id="tab-analysis"
 >
 
-<div class="empty">
-Analysis coming soon.
+<div class="section-header">
+
+<h2>
+S&P 500
+</h2>
+
+</div>
+
+
+<div class="table-container">
+
+<table class="analysis-table">
+
+<thead>
+
+<tr>
+
+<th>Ticker</th>
+
+</tr>
+
+</thead>
+
+
+<tbody id="sp500Table">
+
+<tr>
+
+<td
+    colspan="1"
+    class="empty"
+>
+Loading tickers...
+</td>
+
+</tr>
+
+</tbody>
+
+</table>
+
 </div>
 
 </div>
