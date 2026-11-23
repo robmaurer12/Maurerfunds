@@ -1,6 +1,6 @@
 const SESSION_COOKIE = "mf_session";
 const SESSION_MAX_AGE = 60 * 60 * 24 * 7;
-const PBKDF2_ITERATIONS = 150000;
+const PBKDF2_ITERATIONS = 100000;
 const DUMMY_SALT_B64 = "MDEyMzQ1Njc4OWFiY2RlZg==";
 
 const encoder = new TextEncoder();
@@ -37,19 +37,73 @@ const SCHEMA_STATEMENTS = [
         ")"
 ];
 
-async function addUserIdColumn(env, table) {
-    try {
-        await env.DB
-            .prepare("ALTER TABLE " + table + " ADD COLUMN user_id TEXT")
-            .run();
-    } catch (error) {
-        if (
-            !error ||
-            !/duplicate column name/i.test(String(error.message))
-        ) {
-            throw error;
-        }
+async function getTableColumns(env, table) {
+    const result = await env.DB
+        .prepare("PRAGMA table_info(" + table + ")")
+        .all();
+
+    return new Set((result.results || []).map(row => row.name));
+}
+
+async function addColumnIfMissing(env, table, column, definition, columns) {
+    if (columns.has(column)) {
+        return;
     }
+
+    await env.DB
+        .prepare(
+            "ALTER TABLE " + table + " ADD COLUMN " + column + " " + definition
+        )
+        .run();
+
+    columns.add(column);
+}
+
+async function insertTransaction(env, values) {
+    const columns = await getTableColumns(env, "transactions");
+    const names = [
+        "user_id",
+        "ticker",
+        "type",
+        "shares",
+        "price",
+        "amount",
+        "date",
+        "is_initial"
+    ];
+    const binds = [
+        values.userId,
+        values.ticker,
+        values.type,
+        values.shares,
+        values.price,
+        values.amount || 0,
+        values.date,
+        values.is_initial || 0
+    ];
+
+    if (columns.has("transaction_type")) {
+        names.push("transaction_type");
+        binds.push(values.type);
+    }
+
+    if (columns.has("transaction_date")) {
+        names.push("transaction_date");
+        binds.push(values.date);
+    }
+
+    const placeholders = names.map(() => "?").join(", ");
+
+    await env.DB
+        .prepare(
+            "INSERT INTO transactions (" +
+                names.join(", ") +
+                ") VALUES (" +
+                placeholders +
+                ")"
+        )
+        .bind(...binds)
+        .run();
 }
 
 async function setupSchema(env) {
@@ -57,8 +111,71 @@ async function setupSchema(env) {
         await env.DB.prepare(statement).run();
     }
 
-    await addUserIdColumn(env, "holdings");
-    await addUserIdColumn(env, "transactions");
+    const holdingsColumns = await getTableColumns(env, "holdings");
+    await addColumnIfMissing(
+        env,
+        "holdings",
+        "user_id",
+        "TEXT",
+        holdingsColumns
+    );
+
+    const transactionColumns = await getTableColumns(env, "transactions");
+    await addColumnIfMissing(
+        env,
+        "transactions",
+        "user_id",
+        "TEXT",
+        transactionColumns
+    );
+    await addColumnIfMissing(
+        env,
+        "transactions",
+        "type",
+        "TEXT NOT NULL DEFAULT ''",
+        transactionColumns
+    );
+    await addColumnIfMissing(
+        env,
+        "transactions",
+        "amount",
+        "REAL NOT NULL DEFAULT 0",
+        transactionColumns
+    );
+    await addColumnIfMissing(
+        env,
+        "transactions",
+        "date",
+        "TEXT NOT NULL DEFAULT ''",
+        transactionColumns
+    );
+    await addColumnIfMissing(
+        env,
+        "transactions",
+        "is_initial",
+        "INTEGER NOT NULL DEFAULT 0",
+        transactionColumns
+    );
+
+    if (transactionColumns.has("transaction_type")) {
+        await env.DB
+            .prepare(
+                "UPDATE transactions SET type = UPPER(transaction_type) " +
+                    "WHERE (type IS NULL OR type = '') " +
+                    "AND transaction_type IS NOT NULL AND transaction_type <> ''"
+            )
+            .run();
+    }
+
+    if (transactionColumns.has("transaction_date")) {
+        await env.DB
+            .prepare(
+                "UPDATE transactions SET date = transaction_date " +
+                    "WHERE (date IS NULL OR date = '') " +
+                    "AND transaction_date IS NOT NULL AND transaction_date <> ''"
+            )
+            .run();
+    }
 
     await env.DB
         .prepare(
@@ -650,7 +767,8 @@ export default {
                         return Response.json({
                             totalDailyChange: 0,
                             totalDailyChangePct: 0,
-                            portfolioValue: 0
+                            portfolioValue: 0,
+                            dailyChangePctByTicker: {}
                         });
                     }
 
@@ -728,7 +846,8 @@ export default {
                             portfolioValue > 0
                                 ? (dailyChangeValue / portfolioValue) * 100
                                 : 0,
-                        portfolioValue: portfolioValue
+                        portfolioValue: portfolioValue,
+                        dailyChangePctByTicker: changeMap
                     });
                 } catch (error) {
                     return Response.json(
@@ -921,20 +1040,16 @@ export default {
                         )
                         .run();
 
-                    await env.DB
-                        .prepare(
-                            "INSERT INTO transactions " +
-                                "(user_id, ticker, type, shares, price, amount, date, is_initial) " +
-                                "VALUES (?, ?, 'BUY', ?, ?, 0, ?, 0)"
-                        )
-                        .bind(
-                            userId,
-                            ticker,
-                            shares,
-                            purchasePrice,
-                            buyDate
-                        )
-                        .run();
+                    await insertTransaction(env, {
+                        userId: userId,
+                        ticker: ticker,
+                        type: "BUY",
+                        shares: shares,
+                        price: purchasePrice,
+                        amount: 0,
+                        date: buyDate,
+                        is_initial: 0
+                    });
 
                     return Response.json({
                         success: true,
@@ -1073,14 +1188,16 @@ export default {
                         );
                     }
 
-                    await env.DB
-                        .prepare(
-                            "INSERT INTO transactions " +
-                                "(user_id, ticker, type, shares, price, amount, date, is_initial) " +
-                                "VALUES (?, ?, 'SELL', ?, ?, 0, ?, 0)"
-                        )
-                        .bind(userId, holding.ticker, shares, price, date)
-                        .run();
+                    await insertTransaction(env, {
+                        userId: userId,
+                        ticker: holding.ticker,
+                        type: "SELL",
+                        shares: shares,
+                        price: price,
+                        amount: 0,
+                        date: date,
+                        is_initial: 0
+                    });
 
                     if (shares >= ownedShares) {
                         await env.DB
@@ -1128,14 +1245,16 @@ export default {
                         );
                     }
 
-                    await env.DB
-                        .prepare(
-                            "INSERT INTO transactions " +
-                                "(user_id, ticker, type, shares, price, amount, date, is_initial) " +
-                                "VALUES (?, NULL, ?, 0, 0, ?, ?, 0)"
-                        )
-                        .bind(userId, type, amount, date)
-                        .run();
+                    await insertTransaction(env, {
+                        userId: userId,
+                        ticker: "",
+                        type: type,
+                        shares: 0,
+                        price: 0,
+                        amount: amount,
+                        date: date,
+                        is_initial: 0
+                    });
 
                     const cash = await getCash(env, userId);
 

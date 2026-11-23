@@ -182,8 +182,11 @@ async function loadHoldings() {
 
     try {
 
-        const response =
-            await authFetch("/api/holdings");
+        const [response, dailyData] =
+            await Promise.all([
+                authFetch("/api/holdings"),
+                loadDailyChange()
+            ]);
 
         if (!response.ok) {
             throw new Error(
@@ -194,13 +197,13 @@ async function loadHoldings() {
         const holdings =
             await response.json();
 
-        renderHoldings(holdings);
+        renderHoldings(holdings, dailyData);
 
     } catch (error) {
 
         table.innerHTML =
             '<tr>' +
-            '<td colspan="8" class="empty">' +
+            '<td colspan="10" class="empty">' +
             'Unable to load holdings.' +
             '</td>' +
             '</tr>';
@@ -209,7 +212,6 @@ async function loadHoldings() {
     }
 
     loadCash();
-    loadDailyChange();
     loadChart(currentRange);
 }
 
@@ -262,21 +264,69 @@ function renderCash(cash) {
 }
 
 
-function renderHoldings(holdings) {
+function formatPercent(value) {
+
+    return (value >= 0 ? "+" : "") + value.toFixed(2) + "%";
+}
+
+
+function percentHTML(value) {
+
+    if (value === null || !Number.isFinite(value)) {
+        return "Unavailable";
+    }
+
+    return (
+        '<span class="' +
+        (value >= 0 ? "gain" : "loss") +
+        '">' +
+        formatPercent(value) +
+        '</span>'
+    );
+}
+
+
+function setCardPercent(id, value) {
+
+    const el = document.getElementById(id);
+
+    if (!el) {
+        return;
+    }
+
+    if (value === null || !Number.isFinite(value)) {
+
+        el.textContent = "Unavailable";
+        el.className = "card-value";
+
+        return;
+    }
+
+    el.textContent = formatPercent(value);
+    el.className =
+        "card-value " +
+        (value >= 0 ? "gain" : "loss");
+}
+
+
+function renderHoldings(holdings, dailyData) {
 
     const table =
         document.getElementById("holdingsTable");
+
+    const dailyChangePctByTicker =
+        (dailyData && dailyData.dailyChangePctByTicker) || {};
 
     if (!holdings || holdings.length === 0) {
 
         table.innerHTML =
             '<tr>' +
-            '<td colspan="8" class="empty">' +
+            '<td colspan="10" class="empty">' +
             'No holdings yet. Click "Add Holding" to get started.' +
             '</td>' +
             '</tr>';
 
-        updateSummary([]);
+        updateSummary([], dailyData);
 
         return;
     }
@@ -328,6 +378,24 @@ function renderHoldings(holdings) {
         }
 
 
+        const rawDailyChangePct =
+            dailyChangePctByTicker[holding.ticker];
+
+        const dailyChangePct =
+            rawDailyChangePct === undefined ||
+            rawDailyChangePct === null
+                ? null
+                : Number(rawDailyChangePct);
+
+        const totalChangePct =
+            currentPrice === null ||
+            !Number.isFinite(purchasePrice) ||
+            purchasePrice <= 0 ||
+            !Number.isFinite(currentPrice)
+                ? null
+                : ((currentPrice - purchasePrice) / purchasePrice) * 100;
+
+
         const row =
             document.createElement("tr");
 
@@ -371,6 +439,14 @@ function renderHoldings(holdings) {
             '</td>' +
 
             '<td>' +
+                percentHTML(dailyChangePct) +
+            '</td>' +
+
+            '<td>' +
+                percentHTML(totalChangePct) +
+            '</td>' +
+
+            '<td>' +
                 escapeHTML(holding.buy_date) +
             '</td>' +
 
@@ -406,11 +482,11 @@ function renderHoldings(holdings) {
 
     holdingCache = holdings;
 
-    updateSummary(holdings);
+    updateSummary(holdings, dailyData);
 }
 
 
-function updateSummary(holdings) {
+function updateSummary(holdings, dailyData) {
 
     let totalInvested = 0;
 
@@ -528,6 +604,24 @@ function updateSummary(holdings) {
         "totalShares"
     ).textContent =
         totalShares.toLocaleString();
+
+
+    const rawDailyChangePct =
+        dailyData && dailyData.totalDailyChangePct;
+
+    const dailyChangePct =
+        rawDailyChangePct === undefined ||
+        rawDailyChangePct === null
+            ? null
+            : Number(rawDailyChangePct);
+
+    const totalChangePct =
+        pricesAvailable && totalInvested > 0
+            ? ((portfolioValue - totalInvested) / totalInvested) * 100
+            : null;
+
+    setCardPercent("dailyChangePct", dailyChangePct);
+    setCardPercent("totalChangePct", totalChangePct);
 }
 
 
@@ -548,10 +642,14 @@ async function loadDailyChange() {
             Number(data.totalDailyChange) || 0,
             Number(data.totalDailyChangePct) || 0
         );
+
+        return data;
     } catch (error) {
         el.textContent = "--";
         el.classList.remove("positive", "negative");
         el.classList.add("neutral");
+
+        return null;
     }
 }
 
@@ -661,7 +759,7 @@ function renderChart(labels, values, range) {
                     borderColor: "#111827",
                     backgroundColor: "rgba(17, 24, 39, 0.08)",
                     fill: true,
-                    tension: 0.25,
+                    tension: 0,
                     pointRadius: 0,
                     borderWidth: 2
                 }
